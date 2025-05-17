@@ -12,8 +12,8 @@
 #define NOMINMAX
 #include <windows.h>
 
-const int N = 8;
-const float cellSize = 100.0f;
+const int N = 64;
+const float cellSize = 15.0f;
 const float epsilon = 1e-3f;
 
 glm::vec2 velocity[N][N];
@@ -57,6 +57,11 @@ void setBoundary(int b, std::vector<float> &x)
     x[IX(0, N - 1)] = 0.5f * (x[IX(1, N - 1)] + x[IX(0, N - 2)]);
     x[IX(N - 1, 0)] = 0.5f * (x[IX(N - 2, 0)] + x[IX(N - 1, 1)]);
     x[IX(N - 1, N - 1)] = 0.5f * (x[IX(N - 2, N - 1)] + x[IX(N - 1, N - 2)]);
+}
+
+float gridSum(std::vector<float> &vec, int i, int j)
+{
+    return vec[IX(i - 1, j)] + vec[IX(i + 1, j)] + vec[IX(i, j - 1)] + vec[IX(i, j + 1)];
 }
 
 void initVelocityField()
@@ -156,22 +161,23 @@ void add_source(float *x, float *s, float dt)
     }
 }
 
-// void diffuse(float* x, float* x0, float diff, float dt) {
-//     float a = dt * diff * N * N;
-//     int RELAXATIONS = 20;
-//     for (int k = 0; k < RELAXATIONS; ++k)
-//     {
-//         for (int i = 1; i < N - 1; ++i)
-//         {
-//             for (int j = 1; j < N - 1; ++j)
-//             {
-//                 float divisor = 2 + 4 * a;
-//                 x[IX(i,j)] = (x0[IX(i,j)] + a * gridSum(x, i, j)) / divisor;
-//             }
-//         }
-
-//     }
-// }
+void diffuse(std::vector<float> &x, std::vector<float> &x0, float diff, float dt) {
+    float a = dt * diff * N * N;
+    int RELAXATIONS = 40;
+    for (int k = 0; k < RELAXATIONS; ++k)
+    {
+        std::swap(x, x0);
+        for (int i = 1; i < N - 1; ++i)
+        {
+            for (int j = 1; j < N - 1; ++j)
+            {
+                float divisor = 1.0f + 4.0f * a;
+                x[IX(i,j)] = (x0[IX(i,j)] + a * gridSum(x, i, j)) / divisor;
+            }
+        }
+        setBoundary(BND_DENSITY, x);
+    }
+}
 
 // void project(glm::vec2* vel, glm::vec2* velOut) {
 //     std::vector<float> div(N * N, 0.0f);
@@ -247,12 +253,13 @@ void advect(std::vector<float> &d, std::vector<float> &d0, glm::vec2 velocity[N]
                           sx * ((1 - sy) * d10 + sy * d11);
         }
     }
+    setBoundary(BND_DENSITY, density);
 }
 
 void seedDensity(std::vector<float> &d)
 {
     std::fill(d.begin(), d.end(), 0.0f);
-    for (int i = 0; i < d.size() / 4; ++i)
+    for (int i = 0; i < N; ++i)
     {
         int x = rand() % (N / 2) + N / 4;
         int y = rand() % (N / 2) + N / 4;
@@ -265,10 +272,6 @@ void clearDensity(std::vector<float> &d)
     std::fill(d.begin(), d.end(), 0.0f);
 }
 
-float gridSum(std::vector<float> vec, int i, int j)
-{
-    return vec[IX(i - 1, j)] + vec[IX(i + 1, j)] + vec[IX(i, j - 1)] + vec[IX(i, j + 1)];
-}
 
 void setupBuffers()
 {
@@ -391,8 +394,8 @@ void mouseButtonCallBack(GLFWwindow *window, int button, int action, int mods)
         std::cout << "If condition met cell: " << i << ", " << j << std::endl;
         if (i >= 0 && i < N && j >= 0 && j < N)
         {
-            density[IX(i, j)] += 10.0f;
-            prevDensity[IX(i, j)] += 10.0f; // Keep buffers in sync
+            density[IX(i, j)] += 100.0f;
+            prevDensity[IX(i, j)] += 100.0f; // Keep buffers in sync
         }
     }
 }
@@ -400,8 +403,9 @@ void mouseButtonCallBack(GLFWwindow *window, int button, int action, int mods)
 void updateSimulation(float dt)
 {
     std::swap(density, prevDensity);
+    diffuse(density, prevDensity, 0.001f, dt);
+    std::swap(density, prevDensity);
     advect(density, prevDensity, velocity, dt);
-    setBoundary(BND_DENSITY, density);
 }
 
 int main()
@@ -441,6 +445,7 @@ int main()
     buildLineVertices();
     seedDensity(density);
     clearDensity(prevDensity);
+    prevDensity = density;
     setupBuffers();
 
     float currTime = static_cast<float>(glfwGetTime());
@@ -467,8 +472,6 @@ int main()
         {
             std::cout << "GL Error: " << err << std::endl;
         }
-
-        // Sleep(1000);
     }
     glfwTerminate();
     return 0;
