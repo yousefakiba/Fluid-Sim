@@ -17,7 +17,9 @@ const float cellSize = 15.0f;
 const float epsilon = 1e-3f;
 
 glm::vec2 velocity[N][N];
-bool showVelocity = true;
+bool showVelocity = false;
+
+bool isMouseDown = false;
 
 std::vector<float> density(N *N);
 std::vector<float> prevDensity(N *N);
@@ -25,6 +27,7 @@ std::vector<float> densityVertices;
 
 int windowWidth = static_cast<int>(N * cellSize);
 int windowHeight = static_cast<int>(N * cellSize);
+GLFWwindow *window;
 
 std::vector<glm::vec2> lineVertices;
 GLuint lineVAO, lineVBO;
@@ -68,7 +71,7 @@ void initVelocityField()
 {
     srand(static_cast<unsigned>(time(nullptr) + rand()));
     float angle = static_cast<float>(rand()) / RAND_MAX * 2.0f * 3.14159f;
-    float speed = 0.1f;
+    float speed = 0.3f;
     glm::vec2 dir = glm::vec2(cos(angle), sin(angle)) * speed;
     for (int x = 0; x < N; ++x)
     {
@@ -259,7 +262,7 @@ void advect(std::vector<float> &d, std::vector<float> &d0, glm::vec2 velocity[N]
 void seedDensity(std::vector<float> &d)
 {
     std::fill(d.begin(), d.end(), 0.0f);
-    for (int i = 0; i < N; ++i)
+    for (int i = 0; i < d.size() / 16; ++i)
     {
         int x = rand() % (N / 2) + N / 4;
         int y = rand() % (N / 2) + N / 4;
@@ -383,15 +386,20 @@ void keyCallBack(GLFWwindow *window, int key, int scancode, int action, int mods
 
 void mouseButtonCallBack(GLFWwindow *window, int button, int action, int mods)
 {
-    std::cout << "In mouse call back" << std::endl;
     if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS)
     {
+        isMouseDown = true;
+    } else if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_RELEASE) {
+        isMouseDown = false;
+    }
+}
+
+void injectDensityFromMouse() {
+    if (isMouseDown) {
         double xpos, ypos;
         glfwGetCursorPos(window, &xpos, &ypos);
-
         int i = static_cast<int>(xpos / cellSize);
         int j = static_cast<int>((windowHeight - ypos) / cellSize); // invert since origin is bottom-left
-        std::cout << "If condition met cell: " << i << ", " << j << std::endl;
         if (i >= 0 && i < N && j >= 0 && j < N)
         {
             density[IX(i, j)] += 100.0f;
@@ -400,12 +408,21 @@ void mouseButtonCallBack(GLFWwindow *window, int button, int action, int mods)
     }
 }
 
+void decayDensity() {
+    for (auto& v: density) {
+        v *= 0.999f;
+    }
+    prevDensity = density;
+}
+
 void updateSimulation(float dt)
 {
+    injectDensityFromMouse(); 
     std::swap(density, prevDensity);
     diffuse(density, prevDensity, 0.001f, dt);
     std::swap(density, prevDensity);
     advect(density, prevDensity, velocity, dt);
+    decayDensity();
 }
 
 int main()
@@ -418,7 +435,7 @@ int main()
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    GLFWwindow *window = glfwCreateWindow(windowWidth, windowHeight, "Fluid Velocity Field", nullptr, nullptr);
+    window = glfwCreateWindow(windowWidth, windowHeight, "Fluid Velocity Field", nullptr, nullptr);
     if (!window)
     {
         glfwTerminate();
