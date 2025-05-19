@@ -16,7 +16,8 @@ const int N = 64;
 const float cellSize = 15.0f;
 const float epsilon = 1e-3f;
 
-glm::vec2 velocity[N][N];
+std::vector<float> velocityX(N * N);
+std::vector<float> velocityY(N * N);
 bool showVelocity = false;
 
 bool isMouseDown = false;
@@ -73,11 +74,12 @@ void initVelocityField()
     float angle = static_cast<float>(rand()) / RAND_MAX * 2.0f * 3.14159f;
     float speed = 0.3f;
     glm::vec2 dir = glm::vec2(cos(angle), sin(angle)) * speed;
-    for (int x = 0; x < N; ++x)
+    for (int i = 0; i < N; ++i)
     {
-        for (int y = 0; y < N; ++y)
+        for (int j = 0; j < N; ++j)
         {
-            velocity[x][y] = dir;
+            velocityX[IX(i,j)] = dir.x;
+            velocityY[IX(i,j)] = dir.y;
         }
     }
 }
@@ -90,13 +92,14 @@ void buildLineVertices()
     {
         for (int y = 0; y < N; ++y)
         {
+            glm::vec2 veloictyVec = glm::vec2(velocityX[IX(x,y)], velocityY[IX(x,y)]);
             glm::vec2 base = glm::vec2(x, y) * cellSize + glm::vec2(cellSize / 2, cellSize / 2);
-            glm::vec2 tip = base + velocity[x][y] * sizeMultiplier;
+            glm::vec2 tip = base + veloictyVec * sizeMultiplier;
 
             lineVertices.push_back(base);
             lineVertices.push_back(tip);
 
-            glm::vec2 dir = glm::normalize(velocity[x][y]);
+            glm::vec2 dir = glm::normalize(veloictyVec);
             glm::vec2 ortho = glm::vec2(-dir.y, dir.x);
 
             float arrowSize = 3.0f;
@@ -146,7 +149,6 @@ void buildDensityVertices(const std::vector<float> &d)
             densityVertices.push_back(px);
             densityVertices.push_back(py);
             densityVertices.push_back(val);
-            // std::cout << "(" << x << "," << y << "): "<< val << std::endl;
         }
     }
 
@@ -164,7 +166,8 @@ void add_source(float *x, float *s, float dt)
     }
 }
 
-void diffuse(std::vector<float> &x, std::vector<float> &x0, float diff, float dt) {
+void diffuse(std::vector<float> &x, std::vector<float> &x0, float diff, float dt)
+{
     float a = dt * diff * N * N;
     int RELAXATIONS = 40;
     for (int k = 0; k < RELAXATIONS; ++k)
@@ -175,7 +178,7 @@ void diffuse(std::vector<float> &x, std::vector<float> &x0, float diff, float dt
             for (int j = 1; j < N - 1; ++j)
             {
                 float divisor = 1.0f + 4.0f * a;
-                x[IX(i,j)] = (x0[IX(i,j)] + a * gridSum(x, i, j)) / divisor;
+                x[IX(i, j)] = (x0[IX(i, j)] + a * gridSum(x, i, j)) / divisor;
             }
         }
         setBoundary(BND_DENSITY, x);
@@ -225,7 +228,7 @@ float clampf(float x, float minVal, float maxVal)
     return std::max(minVal, std::min(x, maxVal));
 }
 
-void advect(std::vector<float> &d, std::vector<float> &d0, glm::vec2 velocity[N][N], float dt)
+void advect(std::vector<float> &d, std::vector<float> &d0, std::vector<float> &velocityX, std::vector<float> &velocityY, float dt)
 {
     float dt0 = dt * N;
     for (int i = 1; i < N - 1; ++i)
@@ -234,7 +237,7 @@ void advect(std::vector<float> &d, std::vector<float> &d0, glm::vec2 velocity[N]
         {
 
             // Source location for the point at (i,j)
-            glm::vec2 pos = glm::vec2(i, j) - dt0 * velocity[i][j];
+            glm::vec2 pos = glm::vec2(i, j) - dt0 * glm::vec2(velocityX[IX(i,j)], velocityY[IX(i,j)]);
 
             pos.x = clampf(pos.x, 0.5f, N - 1.5f);
             pos.y = clampf(pos.y, 0.5f, N - 1.5f);
@@ -256,7 +259,7 @@ void advect(std::vector<float> &d, std::vector<float> &d0, glm::vec2 velocity[N]
                           sx * ((1 - sy) * d10 + sy * d11);
         }
     }
-    setBoundary(BND_DENSITY, density);
+    setBoundary(BND_DENSITY, d);
 }
 
 void seedDensity(std::vector<float> &d)
@@ -274,7 +277,6 @@ void clearDensity(std::vector<float> &d)
 {
     std::fill(d.begin(), d.end(), 0.0f);
 }
-
 
 void setupBuffers()
 {
@@ -389,13 +391,17 @@ void mouseButtonCallBack(GLFWwindow *window, int button, int action, int mods)
     if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS)
     {
         isMouseDown = true;
-    } else if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_RELEASE) {
+    }
+    else if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_RELEASE)
+    {
         isMouseDown = false;
     }
 }
 
-void injectDensityFromMouse() {
-    if (isMouseDown) {
+void injectDensityFromMouse()
+{
+    if (isMouseDown)
+    {
         double xpos, ypos;
         glfwGetCursorPos(window, &xpos, &ypos);
         int i = static_cast<int>(xpos / cellSize);
@@ -408,8 +414,10 @@ void injectDensityFromMouse() {
     }
 }
 
-void decayDensity() {
-    for (auto& v: density) {
+void decayDensity()
+{
+    for (auto &v : density)
+    {
         v *= 0.999f;
     }
     prevDensity = density;
@@ -417,11 +425,11 @@ void decayDensity() {
 
 void updateSimulation(float dt)
 {
-    injectDensityFromMouse(); 
+    injectDensityFromMouse();
     std::swap(density, prevDensity);
     diffuse(density, prevDensity, 0.001f, dt);
     std::swap(density, prevDensity);
-    advect(density, prevDensity, velocity, dt);
+    advect(density, prevDensity, velocityX, velocityY, dt);
     decayDensity();
 }
 
